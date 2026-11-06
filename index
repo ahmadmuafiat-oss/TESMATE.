@@ -1,0 +1,243 @@
+# Asesmen Akidah Akhlak Online 2026
+
+Aplikasi asesmen web untuk MA Mambaul Ulum Korek, Tahun Ajaran 2026/2027. Paket ini berisi halaman peserta, halaman administrator, bank 50 soal, skema database, dan Supabase Edge Functions untuk verifikasi identitas, penyimpanan jawaban, penilaian server-side, serta dashboard admin.
+
+> **Status saat paket dibuat:** source code sudah disiapkan, tetapi aplikasi belum online dan belum terhubung ke proyek Supabase milik sekolah. URL Supabase, anon key, akun admin, daftar peserta, dan hosting harus dikonfigurasi oleh pemilik proyek sebelum digunakan siswa.
+
+## 1. Fitur yang tersedia
+
+### Halaman peserta (`index.html`)
+- Halaman pembuka dengan logo resmi MA Mambaul Ulum Korek.
+- Kutipan QS. Fatir ayat 28, tulisan basmalah, dan tema hijau-putih-emas.
+- Form identitas nama, kelas, nomor peserta, dan tahun ajaran.
+- Verifikasi identitas dengan daftar peserta yang diimpor admin.
+- 50 soal pilihan ganda, lima opsi, 10 soal per materi.
+- Urutan soal dan urutan pilihan jawaban diacak per sesi.
+- Navigasi nomor soal, status terjawab/kosong, dan penanda ragu-ragu.
+- Timer 90 menit dengan peringatan 10 dan 5 menit.
+- Autosave ke server dan penyimpanan cadangan di browser.
+- Pemulihan sesi jika halaman tertutup atau koneksi terputus.
+- Pengumpulan otomatis ketika waktu habis.
+- Penilaian 2 poin per jawaban benar; nilai maksimum 100.
+- Hasil pribadi, jumlah benar/salah/kosong, bintang, dan pesan motivasi.
+
+### Dashboard administrator (`admin.html`)
+- Login melalui Supabase Auth.
+- Pemeriksaan hak admin oleh server melalui tabel `admin_users`.
+- Impor daftar peserta CSV.
+- Daftar peserta yang belum mulai, sedang mengerjakan, dan selesai.
+- Pencarian peserta, pengurutan nilai, dan detail riwayat jawaban.
+- Rata-rata, nilai tertinggi/terendah, diagram batang, dan diagram kategori.
+- Cetak laporan dan ekspor CSV yang dapat dibuka di Excel.
+- Mengaktifkan/menonaktifkan asesmen.
+- Reset sesi peserta dengan otorisasi admin.
+
+## 2. Struktur folder
+
+```text
+asesmen-akidah-akhlak-2026/
+├── public/                   # hanya folder ini yang dipublikasikan sebagai website
+│   ├── index.html
+│   ├── admin.html
+│   ├── styles.css
+│   ├── app.js
+│   ├── admin.js
+│   ├── config.js             # isi URL dan anon key proyek Supabase
+│   ├── config.example.js
+│   └── assets/
+│       └── logo-ma-mambaul-ulum-korek.jpeg
+├── netlify.toml
+├── vercel.json
+└── supabase/                 # schema, seed (berisi kunci), dan fungsi server; jangan publikasikan
+    ├── schema.sql
+    ├── seed.sql
+    ├── config.toml
+    └── functions/
+        ├── _shared/common.ts
+        ├── start-exam/index.ts
+        ├── resume-exam/index.ts
+        ├── save-progress/index.ts
+        ├── submit-exam/index.ts
+        └── admin-api/index.ts
+```
+
+## 3. Konfigurasi Supabase
+
+### A. Buat proyek
+1. Buka [https://supabase.com](https://supabase.com), login, lalu buat proyek baru.
+2. Pilih region terdekat yang tersedia untuk sekolah/peserta.
+3. Simpan password database di tempat aman.
+4. Dari **Project Settings → API**, salin **Project URL** dan **anon/public key**.
+
+### B. Buat tabel dan isi 50 soal
+1. Buka **SQL Editor** di dashboard Supabase.
+2. Jalankan seluruh isi `supabase/schema.sql`.
+3. Setelah berhasil, jalankan seluruh isi `supabase/seed.sql`.
+4. Periksa tabel `exam_questions`: jumlahnya harus tepat 50 soal.
+5. Periksa tabel `exam_settings`: tahun ajaran `2026/2027`, durasi `5400` detik, status aktif.
+
+**Jangan membuat policy SELECT publik untuk `exam_questions`, `exam_attempts`, `exam_roster`, atau `admin_users`.** Skema ini sengaja menutup akses tabel langsung dari browser. Aplikasi mengakses data melalui Edge Functions.
+
+### C. Buat akun admin
+1. Buka **Authentication → Users → Add user**.
+2. Buat akun dengan email sekolah/admin dan kata sandi yang kuat.
+3. Salin email yang digunakan. Jangan menulis kata sandi di source code.
+4. Buka **SQL Editor** dan jalankan perintah berikut dengan mengganti email contoh:
+
+```sql
+insert into public.admin_users (user_id)
+select id
+from auth.users
+where email = 'admin@madrasah.sch.id'
+on conflict (user_id) do nothing;
+```
+
+5. Pastikan satu baris admin tercatat di tabel `admin_users`.
+
+Akun yang berhasil login tetapi tidak tercatat di `admin_users` tetap akan ditolak oleh API dashboard.
+
+### D. Pasang Supabase CLI dan deploy Edge Functions
+Supabase CLI memerlukan Node.js dan akses terminal. Panduan resmi instalasi: [Supabase CLI](https://supabase.com/docs/guides/cli).
+
+Dari folder proyek ini jalankan:
+
+```bash
+supabase login
+supabase link --project-ref PROJECT_REF_ANDA
+supabase functions deploy start-exam
+supabase functions deploy resume-exam
+supabase functions deploy save-progress
+supabase functions deploy submit-exam
+supabase functions deploy admin-api
+```
+
+File `supabase/config.toml` mengatur agar empat fungsi peserta dapat dipanggil tanpa login Supabase, sedangkan `admin-api` mewajibkan JWT login.
+
+Supabase menyediakan `SUPABASE_URL` dan `SUPABASE_ANON_KEY` pada lingkungan Edge Functions. Pastikan secret service role tersedia di lingkungan fungsi. Jika belum tersedia, atur dari dashboard **Project Settings → Edge Functions → Secrets** atau CLI:
+
+```bash
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY="SERVICE_ROLE_KEY_PROYEK_ANDA"
+```
+
+**PENTING:** `SUPABASE_SERVICE_ROLE_KEY` hanya boleh berada di lingkungan server/Edge Function. Jangan menaruhnya di `config.js`, `app.js`, `admin.js`, HTML, GitHub, atau hosting static. `config.js` hanya berisi Project URL dan anon/public key.
+
+### E. Hubungkan frontend
+Edit file `public/config.js`:
+
+```js
+export const SUPABASE_URL = "https://PROJECT_REF_ANDA.supabase.co";
+export const SUPABASE_ANON_KEY = "ANON_PUBLIC_KEY_ANDA";
+```
+
+Anon key memang digunakan browser. Keamanan data berasal dari RLS tanpa policy publik dan semua operasi data sensitif dilakukan melalui Edge Functions.
+
+## 4. Impor daftar peserta
+
+Sebelum ujian dibuka, admin harus menyiapkan daftar peserta resmi dalam CSV dengan empat kolom:
+
+```csv
+candidate_no,name,class,academic_year
+001,Nur Aisyah,XI IPA 1,2026/2027
+002,Muhammad Fikri,XI IPA 1,2026/2027
+```
+
+Langkah:
+1. Buka `admin.html` setelah deployment.
+2. Login menggunakan akun admin yang sudah diberi hak akses.
+3. Pilih file CSV, lalu klik **Impor CSV**.
+4. Pastikan jumlah peserta sesuai daftar panitia.
+5. Siswa hanya dapat memulai asesmen jika nomor peserta, nama, kelas, dan tahun ajaran cocok dengan daftar resmi.
+
+Dashboard dapat menghitung peserta yang belum memulai karena daftar roster sudah tersedia. Jika roster belum diimpor, jumlah peserta yang belum mengerjakan tidak dapat diketahui.
+
+## 5. Hosting dan mendapatkan link online
+
+### Opsi Netlify (paling sederhana untuk folder static)
+1. Pastikan `public/config.js` sudah diisi.
+2. Buat repository GitHub **private** dan unggah isi folder proyek ini. `supabase/seed.sql` memuat kunci jawaban; jangan pernah memasukkannya ke repository publik. Jangan unggah service role key atau password admin.
+3. Buka [https://app.netlify.com](https://app.netlify.com), pilih **Add new site → Import an existing project**.
+4. Hubungkan repository GitHub.
+5. Build command dikosongkan; publish directory isi `public` (sudah diatur di `netlify.toml`).
+6. Klik **Deploy site**.
+7. Setelah deployment selesai, Netlify memberi URL, misalnya `https://nama-situs.netlify.app`.
+8. Halaman siswa: URL utama. Halaman admin: tambahkan `/admin.html`.
+
+### Opsi Vercel
+1. Impor repository yang sama ke [https://vercel.com](https://vercel.com).
+2. Pilih framework **Other**, biarkan build command kosong, dan pastikan output directory adalah `public` (sudah dicantumkan di `vercel.json`).
+3. Deploy. File `vercel.json` sudah disertakan untuk header keamanan dasar.
+4. Halaman admin tersedia di `/admin.html`.
+
+Setelah deployment, lakukan tes menggunakan satu akun peserta uji sebelum membagikan link ke seluruh siswa melalui WhatsApp.
+
+## 6. Mengganti logo
+
+Logo yang Anda unggah sudah disimpan pada:
+
+`public/assets/logo-ma-mambaul-ulum-korek.jpeg`
+
+Untuk mengganti logo:
+1. Siapkan logo baru dalam format JPG, PNG, atau WebP.
+2. Ganti file tersebut dengan nama yang sama, atau ubah atribut `src` pada `public/index.html` dan `public/admin.html`.
+3. Deploy ulang hosting.
+
+## 7. Alur penggunaan guru dan siswa
+
+### Guru/admin
+1. Impor daftar peserta CSV.
+2. Pastikan status asesmen aktif.
+3. Bagikan URL halaman siswa kepada peserta.
+4. Pantau jumlah peserta dan nilai melalui `/admin.html`.
+5. Setelah ujian, ekspor CSV atau cetak laporan.
+6. Nonaktifkan asesmen setelah periode ujian berakhir.
+
+### Siswa
+1. Buka link asesmen.
+2. Isi nama, kelas, nomor peserta, dan tahun ajaran sesuai daftar resmi.
+3. Kerjakan 50 soal dalam waktu 90 menit.
+4. Gunakan navigasi untuk meninjau soal dan tandai soal yang masih diragukan.
+5. Klik **Kumpulkan Jawaban** dan konfirmasi pengiriman.
+6. Lihat hasil pribadi setelah pengumpulan berhasil.
+
+## 8. Keamanan dan batasan penting
+
+- Kunci jawaban tidak dikirim ke halaman siswa. Koreksi dilakukan di Edge Function menggunakan service role.
+- Hosting static hanya mempublikasikan folder `public/`. Folder `supabase/` yang berisi seed SQL dan kunci jawaban tetap berada di luar folder publik. Simpan repository sebagai private karena `seed.sql` berisi kunci jawaban.
+- Siswa tidak mendapat akses langsung ke tabel database.
+- Satu nomor peserta hanya dapat memiliki satu attempt per tahun ajaran. Admin dapat reset attempt jika memang diperlukan.
+- Hasil siswa hanya dikirim ke sesi yang memiliki access token acak milik peserta tersebut.
+- Admin API memeriksa JWT dan keanggotaan tabel `admin_users` di server.
+- Nama, kelas, dan nomor peserta diverifikasi terhadap roster. Ini mencegah salah input dan duplikasi, tetapi **bukan autentikasi identitas yang kuat**: orang yang mengetahui seluruh data peserta masih berpotensi menyamar. Untuk ujian berisiko tinggi, tambahkan PIN unik per peserta atau login siswa.
+- Autosave server berjalan saat peserta menjawab dan secara berkala. Browser juga menyimpan salinan lokal untuk pemulihan. Siswa sebaiknya tetap menggunakan perangkat dan browser yang sama saat melanjutkan sesi.
+- CORS pada fungsi peserta saat ini mengizinkan origin umum agar mudah dipasang di hosting. Untuk produksi, batasi `Access-Control-Allow-Origin` ke domain hosting sekolah.
+- Jangan membagikan service role key, password admin, atau akses SQL kepada siswa.
+
+## 9. Checklist pengujian sebelum digunakan
+
+- [ ] `exam_questions` berisi tepat 50 soal.
+- [ ] Daftar peserta CSV sudah diimpor dan jumlahnya sesuai.
+- [ ] Akun admin dapat login; akun non-admin ditolak.
+- [ ] Identitas yang cocok dapat memulai ujian.
+- [ ] Nama/kelas/nomor peserta yang tidak cocok ditolak.
+- [ ] Nomor peserta yang sudah memulai tidak dapat membuat attempt kedua.
+- [ ] Urutan soal dan pilihan berubah antar sesi.
+- [ ] Jawaban tersimpan setelah dipilih dan dapat dipulihkan setelah refresh.
+- [ ] Timer berjalan 90 menit dan memberi peringatan pada 10 serta 5 menit.
+- [ ] Pengumpulan manual dan otomatis menghasilkan nilai yang benar.
+- [ ] Hasil siswa tidak menampilkan kunci jawaban atau hasil peserta lain.
+- [ ] Dashboard admin menampilkan roster, status, statistik, diagram, dan riwayat.
+- [ ] Ekspor CSV dan cetak laporan berfungsi.
+- [ ] Asesmen dapat dinonaktifkan oleh admin.
+
+**Catatan pengujian:** tanpa kredensial proyek Supabase dan akun hosting milik sekolah, integrasi database, autentikasi, dan deployment belum dapat diuji secara langsung dari paket ini. Lakukan checklist di atas pada proyek staging sebelum ujian resmi.
+
+## 10. Menjalankan secara lokal
+
+Jangan membuka `index.html` langsung dengan `file://` karena browser membatasi ES module. Jalankan server static dari folder `public`:
+
+```bash
+cd public
+python -m http.server 8080
+```
+
+Lalu buka `http://localhost:8080` untuk halaman siswa atau `http://localhost:8080/admin.html` untuk admin. Supabase tetap harus sudah dikonfigurasi dan Edge Functions sudah di-deploy.
